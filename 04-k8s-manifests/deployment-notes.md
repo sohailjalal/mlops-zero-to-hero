@@ -215,6 +215,39 @@ curl -Method POST `
 
 ---
 
+## Phase 4 — Cluster Teardown (Avoid AWS Charges)
+
+> **Important:** Always delete the Ingress first so the ALB controller can cleanly remove the ALB before the cluster is gone. Skipping this may leave an orphaned ALB still incurring charges.
+
+### Step 1 — Delete the Ingress (removes the ALB)
+```powershell
+kubectl delete ingress intent-classifier-ingress -n intent-namespace
+```
+
+### Step 2 — Delete the EKS Cluster
+```powershell
+eksctl delete cluster --name demo-cluster --region us-east-1
+```
+This takes 10-15 minutes. Deletes nodes, node groups, IAM service account, OIDC provider, and control plane.
+
+### Step 3 — Verify Everything is Deleted
+```powershell
+# Confirm cluster is gone
+aws eks list-clusters --region us-east-1
+# Expected: { "clusters": [] }
+
+# Confirm no orphaned Load Balancers
+aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[*].LoadBalancerName"
+# Expected: []
+```
+
+### Optional — Delete ECR Image (stops image storage charges)
+```powershell
+aws ecr delete-repository --repository-name mlops --region us-east-1 --force
+```
+
+---
+
 ## Possible Next Steps
 
 | Step | Description |
