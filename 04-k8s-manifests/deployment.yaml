@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
         - name: intent-classifier
-          image: <image-name>
+          image: 737971166371.dkr.ecr.us-east-1.amazonaws.com/mlops:latest
           ports:
             - containerPort: 6000

@@ -1,3 +1,7 @@
 __pycache__/
 
 artifacts/
+
+.venv/
+iam_policy.json
+*.txt
