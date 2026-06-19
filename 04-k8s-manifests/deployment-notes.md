@@ -250,15 +250,15 @@ aws ecr delete-repository --repository-name mlops --region us-east-1 --force
 
 ## Git — Push to GitHub
 
-> **Note:** When pushing from VS Code terminal, Git Credential Manager may open a browser OAuth flow that fails (`127.0.0.1` refused to connect). Fix this permanently by switching to credential store and embedding the PAT in the remote URL.
+> **Note:** When pushing from VS Code terminal, Git Credential Manager intercepts the push and opens a browser OAuth flow that fails (`127.0.0.1` refused to connect). Always use the command below to bypass it.
 
-### One-time fix (run once in VS Code terminal)
-```powershell
-git config --global credential.helper store
-git remote set-url origin https://<YOUR-PAT>@github.com/sohailjalal/mlops-zero-to-hero.git
-```
+### Generate a PAT with repo scope
+1. Go to https://github.com/settings/tokens
+2. Click **Generate new token (classic)**
+3. Check the **`repo`** scope — without this the token can read but not write
+4. Copy the token immediately (shown only once)
 
-### Stage and push
+### Stage and commit
 ```powershell
 git add 04-k8s-manifests/deployment.yaml
 git add 04-k8s-manifests/service.yaml
@@ -266,10 +266,16 @@ git add 04-k8s-manifests/ingress.yaml
 git add 04-k8s-manifests/deployment-notes.md
 git add .gitignore
 git commit -m "your commit message here"
-git push origin kubernetes
 ```
 
-> **Security:** Generate a PAT at https://github.com/settings/tokens (Settings → Developer Settings → Personal Access Tokens). Never commit the token value into code.
+### Push — bypass credential manager with -c flag
+```powershell
+git -c credential.helper="" push https://<YOUR-PAT>@github.com/sohailjalal/mlops-zero-to-hero.git kubernetes
+```
+
+> **Why `-c credential.helper=""`?** This tells git to ignore the VS Code credential manager for this command only and use the token embedded in the URL directly.
+
+> **Security:** Never commit the token value into code. Revoke and regenerate at https://github.com/settings/tokens if accidentally shared.
 
 ---
 
