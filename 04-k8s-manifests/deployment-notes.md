@@ -248,6 +248,31 @@ aws ecr delete-repository --repository-name mlops --region us-east-1 --force
 
 ---
 
+## Git — Push to GitHub
+
+> **Note:** When pushing from VS Code terminal, Git Credential Manager may open a browser OAuth flow that fails (`127.0.0.1` refused to connect). Fix this permanently by switching to credential store and embedding the PAT in the remote URL.
+
+### One-time fix (run once in VS Code terminal)
+```powershell
+git config --global credential.helper store
+git remote set-url origin https://<YOUR-PAT>@github.com/sohailjalal/mlops-zero-to-hero.git
+```
+
+### Stage and push
+```powershell
+git add 04-k8s-manifests/deployment.yaml
+git add 04-k8s-manifests/service.yaml
+git add 04-k8s-manifests/ingress.yaml
+git add 04-k8s-manifests/deployment-notes.md
+git add .gitignore
+git commit -m "your commit message here"
+git push origin kubernetes
+```
+
+> **Security:** Generate a PAT at https://github.com/settings/tokens (Settings → Developer Settings → Personal Access Tokens). Never commit the token value into code.
+
+---
+
 ## Possible Next Steps
 
 | Step | Description |
