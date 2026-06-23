@@ -1,30 +1,62 @@
-# Build and Push Intent Classifier Model Container
+# Build and Push Intent Classifier Model Container to AWS ECR
 
-This document provides the commands to build the Docker image for the Intent Classifier model and push it to Docker Hub.
+This document provides the commands to build the Docker image for the Intent Classifier model and push it to AWS ECR.
 
-### Login to Docker Hub
+> **Lesson learnt:** We use ECR (not Docker Hub) because the EKS nodes already have IAM-based ECR pull permissions — no registry credentials needed in the cluster.
 
-`docker login`
+---
 
-### Build the Docker Image
+### Step 1 — Authenticate Docker to ECR
 
-Replace <dockerhub-username> with your Docker Hub username.
+```powershell
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 737971166371.dkr.ecr.us-east-1.amazonaws.com
+```
 
-`docker build -t <dockerhub-username>/intent-classifier:latest .`
+### Step 2 — Create ECR Repository (first time only)
 
-### Tag the Image (Optional Version Tag)
+```powershell
+aws ecr create-repository --repository-name mlops --region us-east-1
+```
 
-`docker tag <dockerhub-username>/intent-classifier:latest <dockerhub-username>/intent-classifier:v1`
+### Step 3 — Build the Image
 
-### Push the Image to Docker Hub
+Run from the project root where your `Dockerfile` is:
 
-Push the latest tag:
+```powershell
+docker build -t mlops:latest .
+```
 
-`docker push <dockerhub-username>/intent-classifier:latest`
+### Step 4 — Tag for ECR
 
-Push the versioned tag:
+```powershell
+docker tag mlops:latest 737971166371.dkr.ecr.us-east-1.amazonaws.com/mlops:latest
+```
 
-`docker push <dockerhub-username>/intent-classifier:v1`
+### Step 5 — Push to ECR
 
-5. Verify the Image
-docker pull <dockerhub-username>/intent-classifier:latest
+```powershell
+docker push 737971166371.dkr.ecr.us-east-1.amazonaws.com/mlops:latest
+```
+
+### Step 6 — Verify
+
+```powershell
+aws ecr list-images --repository-name mlops --region us-east-1
+```
+
+---
+
+> **Note:** Ensure the EKS node group IAM role has `AmazonEC2ContainerRegistryReadOnly` policy attached, otherwise pods will fail with `ImagePullBackOff`. Get the role name with:
+> ```powershell
+> aws eks describe-nodegroup `
+>   --cluster-name my-cluster `
+>   --nodegroup-name standard-workers `
+>   --region us-east-1 `
+>   --query "nodegroup.nodeRole"
+> ```
+> Then attach:
+> ```powershell
+> aws iam attach-role-policy `
+>   --role-name <node-group-role-name> `
+>   --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+> ```

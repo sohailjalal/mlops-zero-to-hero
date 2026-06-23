@@ -6,22 +6,47 @@
 You should have these installed and configured:  
 - AWS CLI (`aws configure` should be completed)  
 - `eksctl`  
-- `kubectl`  
+- `kubectl`
+- `helm` (needed for ALB controller install in a later step)
+
+Install missing tools via winget (run in PowerShell):
+
+```powershell
+winget install eksctl
+winget install Kubernetes.kubectl
+winget install Helm.Helm
+```
+
+Verify installations:
+
+```powershell
+aws --version
+eksctl version
+kubectl version --client
+helm version
+```
+
+> **Lesson learnt:** Verify AWS credentials before creating the cluster — saves time debugging later:
+> ```powershell
+> aws sts get-caller-identity
+> ```
 
 ---
 
 ## 2. Create a Simple EKS Cluster
 
-    eksctl create cluster \
-      --name my-cluster \
-      --region us-east-1 \
-      --version 1.32 \
-      --nodegroup-name standard-workers \
-      --node-type t3.medium \
-      --nodes 2 \
-      --nodes-min 1 \
-      --nodes-max 3 \
-      --managed
+```powershell
+eksctl create cluster `
+  --name my-cluster `
+  --region us-east-1 `
+  --version 1.32 `
+  --nodegroup-name standard-workers `
+  --node-type t3.medium `
+  --nodes 2 `
+  --nodes-min 1 `
+  --nodes-max 3 `
+  --managed
+```
 
 This command automatically creates:  
 - VPC, Subnets  
@@ -35,12 +60,16 @@ This command automatically creates:
 
 If needed, update kubeconfig manually:
 
-    aws eks update-kubeconfig --region us-east-1 --name my-cluster
+```powershell
+aws eks update-kubeconfig --region us-east-1 --name my-cluster
+```
 
 Verify nodes:
 
-    kubectl get nodes
-    kubectl get pods -n kube-system
+```powershell
+kubectl get nodes
+kubectl get pods -n kube-system
+```
 
 ---
 
@@ -48,17 +77,23 @@ Verify nodes:
 
 List clusters:
 
-    eksctl get cluster
+```powershell
+eksctl get cluster
+```
 
 Describe cluster:
 
-    aws eks describe-cluster --name my-cluster --region us-east-1
+```powershell
+aws eks describe-cluster --name my-cluster --region us-east-1
+```
 
 ---
 
 ## 5. Delete the Cluster (Cleanup)
 
-    eksctl delete cluster --name my-cluster --region us-east-1
+```powershell
+eksctl delete cluster --name my-cluster --region us-east-1
+```
 
 This removes the control plane and node group to avoid unwanted AWS charges.
 

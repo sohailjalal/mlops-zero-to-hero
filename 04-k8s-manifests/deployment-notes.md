@@ -14,7 +14,7 @@ Internet --> ALB Ingress --> ClusterIP Service --> Pod (gunicorn/Flask, port 600
 
 | Resource | Value |
 |---|---|
-| ALB DNS | `k8s-intentna-intentcl-30447cc53b-2049773019.us-east-1.elb.amazonaws.com` |
+| ALB DNS | `k8s-intentna-intentcl-4d39a62a7c-831801538.us-east-1.elb.amazonaws.com` |
 | ECR Image | `737971166371.dkr.ecr.us-east-1.amazonaws.com/mlops:latest` |
 | Namespace | `intent-namespace` |
 
@@ -203,15 +203,23 @@ kubectl get ingress -n intent-namespace
 kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=50
 
 # Health check
-curl http://k8s-intentna-intentcl-30447cc53b-2049773019.us-east-1.elb.amazonaws.com/health
+Invoke-WebRequest -Uri "http://k8s-intentna-intentcl-4d39a62a7c-831801538.us-east-1.elb.amazonaws.com/health"
+# Expected: StatusCode 200, Content {"status":"ok"}
 
 # Predict
-curl -Method POST `
-  -Uri "http://k8s-intentna-intentcl-30447cc53b-2049773019.us-east-1.elb.amazonaws.com/predict" `
+Invoke-WebRequest `
+  -Method POST `
+  -Uri "http://k8s-intentna-intentcl-4d39a62a7c-831801538.us-east-1.elb.amazonaws.com/predict" `
   -Headers @{"Content-Type"="application/json"} `
   -Body '{"text": "I want to book a flight"}'
 # Expected: {"intent":"greeting"}
 ```
+
+> **Lesson learnt — Windows curl vs Invoke-WebRequest:**
+> - In PowerShell, `curl` is an alias for `Invoke-WebRequest` — they are NOT the same as Linux curl.
+> - For POST requests with JSON body, use `Invoke-WebRequest` with `-Method`, `-Headers`, and `-Body` params.
+> - If using `curl.exe` (real curl), escape quotes with `\"` in the JSON body: `-d "{\"text\": \"value\"}"`.
+> - After a new ALB is created, wait **2-5 minutes** for DNS to propagate before testing — `Could not resolve host` errors are normal during this window.
 
 ---
 
