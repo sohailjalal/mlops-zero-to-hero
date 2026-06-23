@@ -1,195 +1,151 @@
-# Install SageMaker using AWS CLI
+# SageMaker Production Setup using AWS CLI (Windows 11)
 
-### Get the Default VPC ID
+> **Lessons learnt:** All commands below use Windows 11 PowerShell syntax (backticks for line continuation).
+> JSON parameters must be written to file using `[System.IO.File]::WriteAllText` with ASCII encoding — PowerShell's `Out-File` adds a BOM character that breaks AWS CLI JSON parsing.
 
-```
-aws ec2 describe-vpcs \
-  --filters "Name=isDefault,Values=true" \
-  --query "Vpcs[0].VpcId" \
-  --output text \
-  --region <REGION>
-```
+---
 
-### List Subnets Under the Default VPC
+## Step 1 — Create S3 Bucket for Model Artifacts
 
-```
-aws ec2 describe-subnets \
-  --filters "Name=vpc-id,Values=<DEFAULT_VPC_ID>" \
-  --query "Subnets[].SubnetId" \
-  --output text \
-  --region <REGION>
+```powershell
+aws s3 mb s3://intent-classifier-sagemaker-737971166371 --region us-east-1
 ```
 
-### Create an Execution Role for SageMaker Domain
+---
 
-Create a simple trust policy
+## Step 2 — Create IAM Execution Role for SageMaker
 
-Save as trust.json:
+Create trust.json using ASCII encoding (avoids BOM issue):
 
-```
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": { "Service": "sagemaker.amazonaws.com" },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
+```powershell
+$json = "{`"Version`":`"2012-10-17`",`"Statement`":[{`"Effect`":`"Allow`",`"Principal`":{`"Service`":`"sagemaker.amazonaws.com`"},`"Action`":`"sts:AssumeRole`"}]}"
+[System.IO.File]::WriteAllText("$PWD\trust.json", $json, [System.Text.Encoding]::ASCII)
 ```
 
-Create the role
+Create the role:
 
-```
-aws iam create-role \
-  --role-name SageMakerDomainExecutionRole \
+```powershell
+aws iam create-role `
+  --role-name SageMakerIntentClassifierRole `
   --assume-role-policy-document file://trust.json
 ```
 
-Attach a basic policy (beginner friendly)
+Save the Role ARN from output:
+`arn:aws:iam::737971166371:role/SageMakerIntentClassifierRole`
 
-```
-aws iam attach-role-policy \
-  --role-name SageMakerDomainExecutionRole \
+Attach policies:
+
+```powershell
+aws iam attach-role-policy `
+  --role-name SageMakerIntentClassifierRole `
   --policy-arn arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+
+aws iam attach-role-policy `
+  --role-name SageMakerIntentClassifierRole `
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
 ```
 
-Save the role ARN from:
+Verify:
 
-`aws iam get-role --role-name SageMakerDomainExecutionRole --query "Role.Arn" --output text`
-
-### Create the SageMaker Domain (Using Default VPC)
-
-This is the core step.
-
-```
-aws sagemaker create-domain \
-  --domain-name my-sagemaker-domain \
-  --auth-mode IAM \
-  --vpc-id <DEFAULT_VPC_ID> \
-  --subnet-ids <SUBNET1> <SUBNET2> \
-  --app-network-access-type VpcOnly \
-  --default-user-settings "{
-      \"ExecutionRole\": \"<ROLE_ARN>\"
-   }" \
-  --region <REGION>
+```powershell
+aws iam list-attached-role-policies --role-name SageMakerIntentClassifierRole
 ```
 
-This returns a DomainId. If you lose it, list domains:
+---
 
-`aws sagemaker list-domains --region <REGION>`
+## Step 3 — Get Default VPC and Subnets
 
-### Create a SageMaker UserProfile + Tag It
+> **Lesson learnt:** Default VPC may not exist if previously deleted. Recreate it with `create-default-vpc`.
 
-ABAC depends on tags.
-
-```
-aws sagemaker create-user-profile \
-  --domain-id <DOMAIN_ID> \
-  --user-profile-name alice-profile \
-  --tags Key=studiouserid,Value=alice123 \
-  --region <REGION>
+```powershell
+# Check for default VPC
+aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" `
+  --query "Vpcs[0].VpcId" --output text --region us-east-1
 ```
 
-### Create the IAM User and Tag the User
+If output is `None`, recreate the default VPC:
 
-The IAM user must have the same tag for ABAC matching.
-
-```
-aws iam create-user --user-name alice-iam-user
+```powershell
+aws ec2 create-default-vpc --region us-east-1
 ```
 
-Add ABAC tag
+Get subnets (replace VPC ID):
 
-```
-aws iam tag-user \
-  --user-name alice-iam-user \
-  --tags Key=studiouserid,Value=alice123
-```
-
-### Create the ABAC Policy
-
-This policy enforces two things:
-
-The IAM user can only generate a presigned URL for a user profile whose tag matches their own (studiouserid).
-
-The IAM user can view the domain and user profile in the SageMaker console.
-
-Save this as sagemaker-abac.json:
-
-```
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowConsoleListAndDescribe",
-      "Effect": "Allow",
-      "Action": [
-        "sagemaker:ListDomains",
-        "sagemaker:ListUserProfiles",
-        "sagemaker:ListApps",
-        "sagemaker:DescribeDomain",
-        "sagemaker:DescribeUserProfile",
-        "sagemaker:ListTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "AllowPresignedUrlWhenTagMatches",
-      "Effect": "Allow",
-      "Action": [
-        "sagemaker:CreatePresignedDomainUrl"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "sagemaker:ResourceTag/studiouserid": "${aws:PrincipalTag/studiouserid}"
-        }
-      }
-    }
-  ]
-}
+```powershell
+aws ec2 describe-subnets --filters "Name=vpc-id,Values=vpc-002132d161e10feff" `
+  --query "Subnets[*].SubnetId" --output text --region us-east-1
 ```
 
-### Create the IAM policy
+Pick any 2 subnet IDs for the domain creation.
 
-```
-aws iam create-policy \
-  --policy-name SageMaker-Studio-ABAC \
-  --policy-document file://sagemaker-abac.json
-```
+---
 
-### Attach the Policy to the IAM User
+## Step 4 — Create SageMaker Domain
 
-```
-aws iam attach-user-policy \
-  --user-name alice-iam-user \
-  --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/SageMaker-Studio-ABAC
-```
+> **Lesson learnt:** `--default-user-settings` JSON must also be written to a file using ASCII encoding — inline JSON and PowerShell variables both fail due to quote mangling.
 
-### How the IAM User Opens SageMaker Studio
+```powershell
+$settings = "{`"ExecutionRole`":`"arn:aws:iam::737971166371:role/SageMakerIntentClassifierRole`"}"
+[System.IO.File]::WriteAllText("$PWD\user-settings.json", $settings, [System.Text.Encoding]::ASCII)
 
-There are two ways now:
-
-Using the SageMaker Console (now works due to list permissions)
-
-- IAM user signs in → goes to:
-- Amazon SageMaker → Studio → Domains
-- They can now see: The domain -> The user profile
-
-Using a Presigned URL (ABAC-restricted)
-
-The user (or admin) runs:
-
-```
-aws sagemaker create-presigned-domain-url \
-  --domain-id <DOMAIN_ID> \
-  --user-profile-name alice-profile \
-  --session-expiration-duration-in-seconds 3600 \
-  --region <REGION>
+aws sagemaker create-domain `
+  --domain-name intent-classifier-domain `
+  --auth-mode IAM `
+  --default-user-settings file://user-settings.json `
+  --vpc-id vpc-002132d161e10feff `
+  --subnet-ids subnet-0501942d3fa774aa8 subnet-0cf9a8c8e3ccd221b `
+  --region us-east-1
 ```
 
-This returns a URL that opens SageMaker Studio only for this UserProfile.
+Note the returned DomainId: `d-kghqdedstvfk`
 
-If an IAM user tries to open another user’s profile → access denied because the tags won't match.
+Wait for domain to be InService:
+
+```powershell
+aws sagemaker describe-domain `
+  --domain-id d-kghqdedstvfk `
+  --region us-east-1 `
+  --query "Status"
+# Wait until output is "InService" before proceeding
+```
+
+---
+
+## Step 5 — Create User Profile
+
+> **Lesson learnt:** Create user profile ONLY after domain status is `InService` — it will fail with `ValidationException` otherwise.
+
+```powershell
+aws sagemaker create-user-profile `
+  --domain-id d-kghqdedstvfk `
+  --user-profile-name intent-classifier-user `
+  --region us-east-1
+```
+
+---
+
+## Step 6 — Open SageMaker Studio
+
+1. AWS Console → SageMaker → Domains
+2. Click `intent-classifier-domain`
+3. Click `intent-classifier-user`
+4. Click **Launch → Studio**
+5. Click **JupyterLab** → **Create JupyterLab Space**
+6. Name it `intent-classifier` → **Run Space** → **Open JupyterLab**
+
+---
+
+## Teardown (avoid charges)
+
+```powershell
+# Delete endpoint first if created
+aws sagemaker delete-endpoint --endpoint-name intent-classifier-endpoint --region us-east-1
+
+# Delete domain
+aws sagemaker delete-domain --domain-id d-kghqdedstvfk --region us-east-1
+
+# Delete IAM role
+aws iam detach-role-policy --role-name SageMakerIntentClassifierRole --policy-arn arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+aws iam detach-role-policy --role-name SageMakerIntentClassifierRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+aws iam delete-role --role-name SageMakerIntentClassifierRole
+```

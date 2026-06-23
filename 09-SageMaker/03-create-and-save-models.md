@@ -1,144 +1,73 @@
-# Create and Save Models to SageMaker
+# Train and Save Intent Classifier Model in SageMaker Studio
 
-### Create an S3 bucket
+> **Resume point:** Domain `d-kghqdedstvfk` and user profile `intent-classifier-user` already created.
+> Open Studio: AWS Console → SageMaker → Domains → intent-classifier-domain → intent-classifier-user → Launch → Studio → JupyterLab
 
-`aws s3 mb s3://my-sagemaker-demo-bucket-abhishek`
+---
 
-### Create IAM Execution Role for SageMaker
+## Inside JupyterLab — Open a Notebook
 
-Create trust policy - trust.json
+File → New → Notebook → Select `Python 3` kernel
 
-```
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": { "Service": "sagemaker.amazonaws.com" },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
+---
+
+## Cell 1 — Install Dependencies
+
+```python
+!pip install scikit-learn joblib boto3
 ```
 
-### Create the role
+---
 
-```
-aws iam create-role \
-  --role-name SageMakerDemoExecutionRole \
-  --assume-role-policy-document file://trust.json
-```
+## Cell 2 — Train the Intent Classifier
 
-Attach permissions
+```python
+import os, joblib
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 
-```
-aws iam attach-role-policy \
-  --role-name SageMakerDemoExecutionRole \
-  --policy-arn arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
-```
+X = ["hi", "hello", "how to reset password", "cancel my subscription", "great service"]
+y = ["greeting", "greeting", "question", "complaint", "praise"]
 
-```
-aws iam attach-role-policy \
-  --role-name SageMakerDemoExecutionRole \
-  --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-```
+pipeline = Pipeline([("vect", CountVectorizer()), ("clf", MultinomialNB())])
+pipeline.fit(X, y)
 
-### Find default VPC + default subnets
-
-Get Default VPC
-
-```
-aws ec2 describe-vpcs --filters Name=isDefault,Values=true \
-  --query "Vpcs[0].VpcId" --output text
+os.makedirs("model/artifacts", exist_ok=True)
+joblib.dump(pipeline, "model/artifacts/intent_model.pkl")
+print("Model trained and saved")
 ```
 
-Get subnets
+---
 
-```
-aws ec2 describe-subnets --filters Name=vpc-id,Values=<VPC-ID> \
-  --query "Subnets[*].SubnetId" --output text
-```
+## Cell 3 — Upload Model to S3
 
-Pick 2 subnets.
-
-### Create SageMaker Domain (Studio)
-
-```
-aws sagemaker create-domain \
-  --domain-name demo-domain \
-  --auth-mode IAM \
-  --default-user-settings "ExecutionRole=arn:aws:iam::<ACCOUNT-ID>:role/SageMakerDemoExecutionRole" \
-  --vpc-id <VPC-ID> \
-  --subnet-ids "<SUBNET-1>" "<SUBNET-2>"
-```
-
-Note the returned DomainId.
-
-### Create User Profile
-
-```
-aws sagemaker create-user-profile \
-  --domain-id <DOMAIN-ID> \
-  --user-profile-name demo-user
-```
-
-### Open SageMaker Studio
-
-Go to:
-
-AWS Console → SageMaker → Domains → demo-domain → Launch app → Studio
-
-Select demo-user.
-
-A JupyterLab interface will open.
-
-### Inside Studio: Train a simple model & Push to S3
-
-Open a Python 3 Notebook.
-
-Now run the following code.
-
-### Import libraries
-
-```
-import boto3
-import joblib
-from sklearn.datasets import load_iris
-from sklearn.tree import DecisionTreeClassifier
-import os
-```
-
-#### Train a tiny ML model
-
-```
-iris = load_iris()
-X, y = iris.data, iris.target
-
-model = DecisionTreeClassifier()
-model.fit(X, y)
-
-joblib.dump(model, "iris-model.pkl")
-
-print("Model saved as iris-model.pkl")
-```
-
-#### Upload model to S3
-
-```
+```python
 import boto3
 
-s3 = boto3.client("s3")
-bucket = "my-sagemaker-demo-bucket-abhishek"
+s3 = boto3.client("s3", region_name="us-east-1")
+bucket = "intent-classifier-sagemaker-737971166371"
 
-s3.upload_file("iris-model.pkl", bucket, "model-artifacts/iris-model.pkl")
-
-print("Uploaded to S3:", f"s3://{bucket}/model-artifacts/iris-model.pkl")
+s3.upload_file(
+    "model/artifacts/intent_model.pkl",
+    bucket,
+    "model-artifacts/intent_model.pkl"
+)
+print(f"Uploaded to s3://{bucket}/model-artifacts/intent_model.pkl")
 ```
 
-### Verify upload from CLI
+---
 
-`aws s3 ls s3://my-sagemaker-demo-bucket-abhishek/model-artifacts/`
+## Cell 4 — Verify Upload
 
-You will see:
+```python
+response = s3.list_objects_v2(Bucket=bucket, Prefix="model-artifacts/")
+for obj in response["Contents"]:
+    print(obj["Key"], "-", obj["Size"], "bytes")
+```
 
-`iris-model.pkl`
+---
+
+## Next Step — Package model for SageMaker deployment
+
+See `04-deploy-and-serve-model.md` for packaging into `model.tar.gz` and deploying as a SageMaker endpoint.
